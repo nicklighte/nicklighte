@@ -1,0 +1,161 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Green Agribusiness - Your Cart</title>
+    <link rel="icon" href="images/favicon.svg" type="image/svg+xml">
+    <link rel="stylesheet" href="style.css">
+</head>
+<body data-page="cart">
+    <header class="navbar" id="site-header"></header>
+
+    <main class="main-container">
+        <h1 class="page-title">Your cart</h1>
+        <div id="cartNotice"></div>
+        <div class="cart-layout">
+            <div class="cart-lines" id="cartLines" aria-live="polite"><p class="muted">Loading your cart…</p></div>
+            <aside class="summary" id="summary" hidden>
+                <h2>Order summary</h2>
+                <div class="sum-row"><span>Subtotal</span><span id="subtotal">KES 0</span></div>
+                <div id="checkout"></div>
+            </aside>
+        </div>
+    </main>
+
+    <footer class="footer" id="site-footer"></footer>
+    <script src="script.js"></script>
+    <script>
+        const linesEl = document.getElementById('cartLines');
+        const summary = document.getElementById('summary');
+        const checkout = document.getElementById('checkout');
+        let me = null;
+        let lines = [];
+
+        // The browser only remembers product ids and quantities. Names and prices come fresh from the server.
+        async function refresh() {
+            const items = Cart.get();
+            if (items.length === 0) {
+                linesEl.innerHTML = `<div class="empty"><p>Your cart is empty.</p><a class="btn-primary" href="catalogue.html">Browse produce</a></div>`;
+                summary.hidden = true;
+                return;
+            }
+            let data;
+            try {
+                data = await api('/cart/price', { method: 'POST', body: { items: items.map((i) => ({ id: i.id, qty: i.quantity })) } });
+            } catch (err) {
+                linesEl.innerHTML = `<div class="alert alert-error">${esc(err.message)}</div>`;
+                return;
+            }
+            // Drop items that are no longer for sale, and tell the buyer
+            if (data.unavailable.length) {
+                data.unavailable.forEach((id) => Cart.remove(id));
+                document.getElementById('cartNotice').innerHTML = '<div class="alert alert-warn">Some items are no longer available and were removed from your cart.</div>';
+            }
+            // Fix quantities that are higher than the stock left
+            data.lines.forEach((l) => { if (l.clamped && l.qty > 0) Cart.setQty(l.id, l.qty); });
+            lines = data.lines.filter((l) => l.qty > 0);
+            data.lines.filter((l) => l.qty === 0).forEach((l) => Cart.remove(l.id));
+
+            if (lines.length === 0) {
+                linesEl.innerHTML = `<div class="empty"><p>Your cart is empty.</p><a class="btn-primary" href="catalogue.html">Browse produce</a></div>`;
+                summary.hidden = true;
+                return;
+            }
+            linesEl.innerHTML = lines.map((l) => `
+                <div class="cart-line" data-id="${l.id}">
+                    ${photoHtml(l)}
+                    <div class="info">
+                        <div class="name">${esc(l.name)}</div>
+                        <div class="meta">${kes(l.price_kes)} per ${esc(l.unit)} · ${esc(l.farmer_name)}</div>
+                        ${l.clamped ? `<div class="error-text">Only ${l.stock} ${esc(l.unit)} available, so we lowered the quantity.</div>` : ''}
+                    </div>
+                    <div class="stepper">
+                        <button type="button" data-act="dec" aria-label="Decrease quantity of ${esc(l.name)}">−</button>
+                        <input type="number" value="${l.qty}" min="1" max="${l.stock}" data-act="set" aria-label="Quantity of ${esc(l.name)}" inputmode="numeric">
+                        <button type="button" data-act="inc" aria-label="Increase quantity of ${esc(l.name)}">+</button>
+                    </div>
+                    <div class="amount">${kes(l.line_total)}<br><button type="button" class="linklike danger" data-act="remove">Remove</button></div>
+                </div>`).join('');
+
+            document.getElementById('subtotal').textContent = kes(data.subtotal);
+            summary.hidden = false;
+            renderCheckout();
+        }
+
+        function renderCheckout() {
+            if (!me) {
+                checkout.innerHTML = `<p class="hint mb-12">Log in as a buyer to place your order. Your cart will be kept.</p>
+                    <a class="btn-primary btn-block" href="login.html?next=cart.html">Log in to order</a>
+                    <p class="hint mt-10">No account? <a href="register.html">Register</a></p>`;
+            } else if (me.role !== 'buyer') {
+                checkout.innerHTML = '<div class="alert alert-warn">Only buyer accounts can place orders.</div>';
+            } else {
+                checkout.innerHTML = `
+                    <form id="orderForm" novalidate>
+                        <div class="field"><label for="delivery_address">Delivery address</label>
+                            <input type="text" id="delivery_address" name="delivery_address" placeholder="Street, town" required minlength="5" maxlength="300" autocomplete="street-address"></div>
+                        <div class="field"><label for="phone">Phone</label>
+                            <input type="tel" id="phone" name="phone" placeholder="0712 345 678" required maxlength="20" autocomplete="tel" inputmode="tel" value="${esc(me.phone || '')}"></div>
+                        <button type="submit" class="btn-primary btn-block" id="placeBtn">Place order</button>
+                    </form>`;
+                document.getElementById('orderForm').addEventListener('submit', placeOrder);
+            }
+        }
+
+        async function placeOrder(e) {
+            e.preventDefault();
+            const form = e.currentTarget;
+            const d = Object.fromEntries(new FormData(form));
+            const p = {};
+            if (d.delivery_address.trim().length < 5) p.delivery_address = 'Enter a delivery address (at least 5 characters).';
+            if (!/^\+?[0-9 ]{9,15}$/.test(d.phone.trim())) p.phone = 'Enter a phone number with 9 to 15 digits.';
+            if (Object.keys(p).length) { showFormErrors(form, null, p); return; }
+
+            const btn = document.getElementById('placeBtn');
+            btn.disabled = true;
+            try {
+                const res = await api('/orders', { method: 'POST', body: {
+                    items: Cart.get().map((i) => ({ id: i.id, qty: i.quantity })),
+                    delivery_address: d.delivery_address, phone: d.phone
+                } });
+                Cart.clear();
+                location.href = 'order.html?id=' + res.order_id + '&new=1';
+            } catch (err) {
+                showFormErrors(form, err.message, err.details);
+                btn.disabled = false;
+                if (err.status === 409) refresh();     // stock changed: show the corrected cart
+            }
+        }
+
+        // Quantity buttons, typed quantity and Remove (one listener for the whole list)
+        linesEl.addEventListener('click', (e) => {
+            const btn = e.target.closest('[data-act]');
+            const row = e.target.closest('.cart-line');
+            if (!btn || !row) return;
+            const id = parseInt(row.dataset.id, 10);
+            const line = lines.find((l) => l.id === id);
+            if (btn.dataset.act === 'remove') Cart.remove(id);
+            else if (btn.dataset.act === 'inc') Cart.setQty(id, Math.min(line.qty + 1, line.stock));
+            else if (btn.dataset.act === 'dec') Cart.setQty(id, Math.max(line.qty - 1, 1));
+            else return;
+            refresh();
+        });
+        linesEl.addEventListener('change', (e) => {
+            if (e.target.dataset.act !== 'set') return;
+            const row = e.target.closest('.cart-line');
+            const id = parseInt(row.dataset.id, 10);
+            const line = lines.find((l) => l.id === id);
+            let n = parseInt(e.target.value, 10);
+            if (!n || n < 1) n = 1;
+            Cart.setQty(id, Math.min(n, line.stock));
+            refresh();
+        });
+
+        (async () => {
+            me = await getMe();
+            refresh();
+        })();
+    </script>
+</body>
+</html>

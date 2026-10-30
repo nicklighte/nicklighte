@@ -1,0 +1,93 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Green Agribusiness - Order</title>
+    <link rel="icon" href="images/favicon.svg" type="image/svg+xml">
+    <link rel="stylesheet" href="style.css">
+</head>
+<body data-page="orders">
+    <header class="navbar" id="site-header"></header>
+
+    <main class="main-container" id="content"><p class="muted">Loading order…</p></main>
+
+    <footer class="footer" id="site-footer"></footer>
+    <script src="script.js"></script>
+    <script>
+        const content = document.getElementById('content');
+        const params = new URLSearchParams(location.search);
+        const FLOW = ['placed', 'confirmed', 'dispatched', 'delivered'];
+        let me = null;
+
+        async function load() {
+            const id = params.get('id');
+            let data;
+            try {
+                if (!/^\d+$/.test(id || '')) throw new ApiError('Order not found.', 404);
+                data = await api('/orders/' + id);
+            } catch (err) {
+                content.innerHTML = `<div class="alert alert-error">${esc(err.message)}</div>`;
+                return;
+            }
+            const { order: o, items } = data;
+            const idx = FLOW.indexOf(o.status);
+            const next = FLOW[idx + 1];
+
+            content.innerHTML = `
+                <div class="no-print">
+                    <p class="crumbs"><a href="${me.role === 'admin' ? 'admin.html' : 'orders.html'}">${me.role === 'admin' ? 'Admin' : 'My orders'}</a> › ${orderNo(o.id)}</p>
+                    ${params.get('new') ? '<div class="alert alert-ok" role="status">Thank you! Your order has been placed.</div>' : ''}
+                    <h1 class="page-title">Order ${orderNo(o.id)}</h1>
+                    <ol class="timeline" aria-label="Order progress">
+                        ${FLOW.map((s, i) => `<li class="${i < idx ? 'done' : ''}${i === idx ? ' current' : ''}"${i === idx ? ' aria-current="step"' : ''}>${esc(cap(s))}</li>`).join('')}
+                    </ol>
+                    <div class="row-between">
+                        <div>
+                            <button type="button" class="btn-primary" id="printBtn">Print / save receipt as PDF</button>
+                        </div>
+                        ${me.role === 'admin' && next ? `<button type="button" class="btn-outline" id="advanceBtn">Mark as ${esc(cap(next))}</button>` : ''}
+                    </div>
+                </div>
+
+                <section class="receipt" aria-label="Receipt">
+                    <header><h2>Green Agribusiness</h2><p class="muted">Order receipt</p></header>
+                    <dl class="receipt-meta">
+                        <div><dt>Receipt no.</dt><dd>${orderNo(o.id)}</dd></div>
+                        <div><dt>Date</dt><dd>${esc(dateOnly(o.created_at))}</dd></div>
+                        <div><dt>Buyer</dt><dd>${esc(o.buyer_name)}</dd></div>
+                        <div><dt>Status</dt><dd>${esc(cap(o.status))}</dd></div>
+                        <div><dt>Deliver to</dt><dd>${esc(o.delivery_address)}</dd></div>
+                        <div><dt>Phone</dt><dd>${esc(o.phone)}</dd></div>
+                    </dl>
+                    <div class="table-wrap"><table>
+                        <thead><tr><th>Item</th><th class="num">Unit price</th><th class="num">Qty</th><th class="num">Amount</th></tr></thead>
+                        <tbody>${items.map((it) => `<tr><td>${esc(it.produce_name)}</td><td class="num">${kes(it.unit_price)} / ${esc(it.unit)}</td>
+                            <td class="num">${it.quantity} ${esc(it.unit)}</td><td class="num">${kes(it.line_total)}</td></tr>`).join('')}</tbody>
+                        <tfoot><tr><th colspan="3" class="num">Total</th><th class="num">${kes(o.total_kes)}</th></tr></tfoot>
+                    </table></div>
+                    <p class="small">Payment is made to the farmer on delivery unless agreed otherwise. Keep this receipt as proof of your order.</p>
+                </section>`;
+
+            document.getElementById('printBtn').addEventListener('click', () => window.print());
+            const adv = document.getElementById('advanceBtn');
+            if (adv) adv.addEventListener('click', async () => {
+                adv.disabled = true;
+                try {
+                    await api(`/admin/orders/${o.id}/advance`, { method: 'PUT' });
+                    toast('Order updated.');
+                    load();
+                } catch (err) {
+                    toast(err.message, 'error');
+                    adv.disabled = false;
+                }
+            });
+        }
+
+        (async () => {
+            me = await requireRole('buyer', 'admin');
+            if (me) load();
+        })();
+    </script>
+</body>
+</html>

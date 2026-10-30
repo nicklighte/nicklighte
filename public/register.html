@@ -1,0 +1,83 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Green Agribusiness - Register</title>
+    <link rel="icon" href="images/favicon.svg" type="image/svg+xml">
+    <link rel="stylesheet" href="style.css">
+</head>
+<body data-page="register">
+    <header class="navbar" id="site-header"></header>
+
+    <main class="main-container center">
+        <div class="form-card">
+            <h1 class="page-title">Create an account</h1>
+            <form id="registerForm" novalidate>
+                <div class="field">
+                    <fieldset>
+                        <legend>I am a</legend>
+                        <div class="choices">
+                            <label><input type="radio" name="role" value="buyer" checked> Buyer</label>
+                            <label><input type="radio" name="role" value="farmer"> Farmer</label>
+                        </div>
+                    </fieldset>
+                </div>
+                <div class="field">
+                    <label for="full_name">Full name</label>
+                    <input type="text" id="full_name" name="full_name" placeholder="Your full name" required minlength="2" maxlength="80" autocomplete="name">
+                </div>
+                <div class="field">
+                    <label for="email">Email</label>
+                    <input type="email" id="email" name="email" placeholder="name@example.com" required maxlength="120" autocomplete="email">
+                </div>
+                <div class="field">
+                    <label for="phone">Phone</label>
+                    <input type="tel" id="phone" name="phone" placeholder="0712 345 678" required maxlength="20" autocomplete="tel" inputmode="tel">
+                </div>
+                <div class="field">
+                    <label for="location">Town or county (farmers)</label>
+                    <input type="text" id="location" name="location" placeholder="e.g. Kiambu" maxlength="80" autocomplete="address-level2">
+                </div>
+                <div class="field">
+                    <label for="password">Password</label>
+                    <input type="password" id="password" name="password" placeholder="8+ characters, letter and number" required minlength="8" maxlength="72" autocomplete="new-password">
+                    <p class="hint">At least 8 characters, with a letter and a number.</p>
+                </div>
+                <button type="submit" class="btn-primary btn-block" id="regBtn">Create account</button>
+            </form>
+            <p class="note">Farmer accounts are approved by an administrator before listing.</p>
+            <p class="note">Already registered? <a href="login.html"><strong>Log in</strong></a>.</p>
+        </div>
+    </main>
+
+    <footer class="footer" id="site-footer"></footer>
+    <script src="script.js"></script>
+    <script>
+        const form = document.getElementById('registerForm');
+
+        form.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const d = Object.fromEntries(new FormData(form));
+            // Browser-side checks give instant feedback; the server repeats every one of them.
+            const p = {};
+            if (d.full_name.trim().length < 2) p.full_name = 'Enter your full name.';
+            if (!/^[^@\s]+@[^@\s]+\.[A-Za-z]{2,}$/.test(d.email.trim())) p.email = 'Enter a valid email address.';
+            if (!/^\+?[0-9 ]{9,15}$/.test(d.phone.trim())) p.phone = 'Enter a phone number with 9 to 15 digits, e.g. 0712 345 678.';
+            if (d.role === 'farmer' && d.location.trim().length < 2) p.location = 'Farmers must enter their town or county.';
+            if (d.password.length < 8 || !/[A-Za-z]/.test(d.password) || !/\d/.test(d.password)) p.password = 'Use at least 8 characters with a letter and a number.';
+            if (Object.keys(p).length) { showFormErrors(form, 'Please fix the highlighted fields.', p); return; }
+
+            const btn = document.getElementById('regBtn');
+            btn.disabled = true;
+            try {
+                const { user } = await api('/register', { method: 'POST', body: d });
+                location.href = user.role === 'farmer' ? 'farmer.html' : 'catalogue.html';
+            } catch (err) {
+                showFormErrors(form, err.message, err.details);
+                btn.disabled = false;
+            }
+        });
+    </script>
+</body>
+</html>

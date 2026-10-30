@@ -1,0 +1,105 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Green Agribusiness - Product Detail</title>
+    <link rel="icon" href="images/favicon.svg" type="image/svg+xml">
+    <link rel="stylesheet" href="style.css">
+</head>
+<body data-page="catalogue">
+    <header class="navbar" id="site-header"></header>
+
+    <main class="main-container" id="content">
+        <p class="muted">Loading…</p>
+    </main>
+
+    <footer class="footer" id="site-footer"></footer>
+    <script src="script.js"></script>
+    <script>
+        const content = document.getElementById('content');
+        const id = new URLSearchParams(location.search).get('id');
+
+        (async () => {
+            const me = await getMe();
+            let p;
+            try {
+                if (!/^\d+$/.test(id || '')) throw new ApiError('Produce not found.', 404);
+                p = await api('/produce/' + id);
+            } catch (err) {
+                content.innerHTML = `<div class="alert alert-error">${esc(err.message)}</div><p><a class="btn-primary" href="catalogue.html">Back to catalogue</a></p>`;
+                return;
+            }
+            document.title = `Green Agribusiness - ${p.name}`;
+
+            const canBuy = p.status === 'approved' && p.quantity > 0 && (!me || me.role === 'buyer');
+            content.innerHTML = `
+                <p class="crumbs"><a href="catalogue.html">Catalogue</a> › <a href="catalogue.html?category=${encodeURIComponent(p.category)}">${esc(p.category)}</a> › ${esc(p.name)}</p>
+                ${p.status !== 'approved' ? `<div class="alert alert-warn">This listing is <strong>${esc(p.status)}</strong> and is not visible to buyers yet.</div>` : ''}
+                <div class="detail-layout">
+                    ${photoHtml(p, 'detail-photo')}
+                    <div class="detail-info">
+                        <h1>${esc(p.name)}</h1>
+                        <p class="price-big">${kes(p.price_kes)} per ${esc(p.unit)}</p>
+                        <p class="muted mb-16">${p.quantity > 0 ? p.quantity + ' ' + esc(p.unit) + ' available' : '<strong class="out">Sold out</strong>'}</p>
+                        ${p.description ? `<p>${esc(p.description)}</p>` : ''}
+                        <div class="facts">
+                            Category: ${esc(p.category)}<br>
+                            Collected from: ${esc(p.location)}<br>
+                            Sold by: <a href="catalogue.html?farmer=${p.farmer_id}">${esc(p.farmer_name)}</a>
+                        </div>
+                        ${canBuy ? `
+                        <form class="add-row" id="addForm">
+                            <div class="stepper">
+                                <button type="button" data-step="-1" aria-label="Decrease quantity">−</button>
+                                <input type="number" id="qty" value="1" min="1" max="${p.quantity}" inputmode="numeric" aria-label="Quantity in ${esc(p.unit)}">
+                                <button type="button" data-step="1" aria-label="Increase quantity">+</button>
+                            </div>
+                            <button type="submit" class="btn-primary grow">Add to cart</button>
+                        </form>` : (me && me.role !== 'buyer' ? '<p class="hint">Only buyer accounts can order.</p>' : '')}
+                    </div>
+                </div>
+                <h2 class="sub" id="moreTitle" hidden>More from this farmer</h2>
+                <div class="grid grid-4" id="more"></div>`;
+
+            const form = document.getElementById('addForm');
+            if (form) {
+                const qty = document.getElementById('qty');
+                const clamp = () => {
+                    let n = parseInt(qty.value, 10);
+                    if (!n || n < 1) n = 1;
+                    if (n > p.quantity) n = p.quantity;
+                    qty.value = n;
+                    return n;
+                };
+                form.querySelectorAll('[data-step]').forEach((b) => b.addEventListener('click', () => {
+                    qty.value = (parseInt(qty.value, 10) || 1) + parseInt(b.dataset.step, 10);
+                    clamp();
+                }));
+                qty.addEventListener('change', clamp);
+                form.addEventListener('submit', (e) => {
+                    e.preventDefault();
+                    const n = clamp();
+                    Cart.add(p.id, n);
+                    toast(`${n} ${p.unit} of ${p.name} added to your cart.`);
+                });
+            }
+
+            // More from the same farmer
+            try {
+                const more = await api(`/produce?farmer=${p.farmer_id}&per_page=5`);
+                const others = more.items.filter((m) => m.id !== p.id).slice(0, 4);
+                if (others.length) {
+                    document.getElementById('moreTitle').hidden = false;
+                    document.getElementById('more').innerHTML = others.map((m) => `
+                        <article class="card">
+                            ${photoHtml(m)}
+                            <h3><a href="product-details.html?id=${m.id}">${esc(m.name)}</a></h3>
+                            <p class="price">${kes(m.price_kes)} per ${esc(m.unit)}</p>
+                        </article>`).join('');
+                }
+            } catch (e) { /* optional section: ignore errors */ }
+        })();
+    </script>
+</body>
+</html>

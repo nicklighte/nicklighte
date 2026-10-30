@@ -1,0 +1,65 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Green Agribusiness - Login</title>
+    <link rel="icon" href="images/favicon.svg" type="image/svg+xml">
+    <link rel="stylesheet" href="style.css">
+</head>
+<body data-page="login">
+    <header class="navbar" id="site-header"></header>
+
+    <main class="main-container center">
+        <div class="form-card">
+            <h1 class="page-title">Log in</h1>
+            <form id="loginForm" novalidate>
+                <div class="field">
+                    <label for="email">Email</label>
+                    <input type="email" id="email" name="email" placeholder="name@example.com" required maxlength="120" autocomplete="username">
+                </div>
+                <div class="field">
+                    <label for="password">Password</label>
+                    <input type="password" id="password" name="password" placeholder="••••••••" required maxlength="72" autocomplete="current-password">
+                </div>
+                <button type="submit" class="btn-primary btn-block" id="loginBtn">Log in</button>
+            </form>
+            <p class="note">New here? <a href="register.html"><strong>Create an account</strong></a>.</p>
+        </div>
+    </main>
+
+    <footer class="footer" id="site-footer"></footer>
+    <script src="script.js"></script>
+    <script>
+        const form = document.getElementById('loginForm');
+
+        // Already logged in? Skip the form.
+        getMe().then((me) => { if (me) goHome(me); });
+
+        function goHome(me) {
+            const next = safeNext(new URLSearchParams(location.search).get('next'));
+            const byRole = { admin: 'admin.html', farmer: 'farmer.html', buyer: 'catalogue.html' };
+            location.href = next || byRole[me.role] || 'index.html';
+        }
+
+        form.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const data = Object.fromEntries(new FormData(form));
+            const problems = {};
+            if (!/^[^@\s]+@[^@\s]+\.[A-Za-z]{2,}$/.test(data.email.trim())) problems.email = 'Enter a valid email address.';
+            if (!data.password) problems.password = 'Enter your password.';
+            if (Object.keys(problems).length) { showFormErrors(form, null, problems); return; }
+
+            const btn = document.getElementById('loginBtn');
+            btn.disabled = true;
+            try {
+                const { user } = await api('/login', { method: 'POST', body: data });
+                goHome(user);
+            } catch (err) {
+                showFormErrors(form, err.message, err.details);
+                btn.disabled = false;
+            }
+        });
+    </script>
+</body>
+</html>

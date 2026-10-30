@@ -1,0 +1,42 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Green Agribusiness - My Orders</title>
+    <link rel="icon" href="images/favicon.svg" type="image/svg+xml">
+    <link rel="stylesheet" href="style.css">
+</head>
+<body data-page="orders">
+    <header class="navbar" id="site-header"></header>
+
+    <main class="main-container">
+        <h1 class="page-title">My orders</h1>
+        <div id="list"><p class="muted">Loading your orders…</p></div>
+    </main>
+
+    <footer class="footer" id="site-footer"></footer>
+    <script src="script.js"></script>
+    <script>
+        (async () => {
+            if (!(await requireRole('buyer'))) return;
+            const list = document.getElementById('list');
+            try {
+                const { orders } = await api('/orders');
+                if (!orders.length) {
+                    list.innerHTML = '<div class="empty"><p>You have not placed an order yet.</p><a class="btn-primary" href="catalogue.html">Browse produce</a></div>';
+                    return;
+                }
+                list.innerHTML = `<div class="table-wrap"><table>
+                    <thead><tr><th>Order</th><th>Date</th><th>Status</th><th class="num">Total</th><th></th></tr></thead>
+                    <tbody>${orders.map((o) => `<tr>
+                        <td>${orderNo(o.id)}</td><td>${esc(dateOnly(o.created_at))}</td><td>${badge(o.status)}</td>
+                        <td class="num">${kes(o.total_kes)}</td><td><a href="order.html?id=${o.id}">View order</a></td></tr>`).join('')}</tbody>
+                    </table></div>`;
+            } catch (err) {
+                list.innerHTML = `<div class="alert alert-error">${esc(err.message)}</div>`;
+            }
+        })();
+    </script>
+</body>
+</html>

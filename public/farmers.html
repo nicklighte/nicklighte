@@ -1,0 +1,39 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Green Agribusiness - Farmers</title>
+    <link rel="icon" href="images/favicon.svg" type="image/svg+xml">
+    <link rel="stylesheet" href="style.css">
+</head>
+<body data-page="farmers">
+    <header class="navbar" id="site-header"></header>
+
+    <main class="main-container">
+        <h1 class="page-title">Our Registered Farmers</h1>
+        <p class="lead">Meet the trusted local growers supplying fresh produce directly to buyers.</p>
+        <div class="grid grid-3" id="farmerGrid"><p class="muted">Loading farmers…</p></div>
+    </main>
+
+    <footer class="footer" id="site-footer"></footer>
+    <script src="script.js"></script>
+    <script>
+        (async () => {
+            const grid = document.getElementById('farmerGrid');
+            try {
+                const { farmers } = await api('/farmers');
+                grid.innerHTML = farmers.map((f) => `
+                    <article class="farmer-card">
+                        <h3>${esc(f.full_name)}</h3>
+                        <p class="meta">Location: ${esc(f.location || 'Not given')} · ${f.listings} listing${f.listings === 1 ? '' : 's'}</p>
+                        <p>${esc(f.bio || 'This farmer has not added a profile yet.')}</p>
+                        ${f.listings ? `<a class="btn-outline btn-small" href="catalogue.html?farmer=${f.id}">View produce</a>` : ''}
+                    </article>`).join('') || '<p class="muted">No approved farmers yet.</p>';
+            } catch (err) {
+                grid.innerHTML = `<div class="alert alert-error">${esc(err.message)}</div>`;
+            }
+        })();
+    </script>
+</body>
+</html>

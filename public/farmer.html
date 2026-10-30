@@ -1,0 +1,231 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Green Agribusiness - My Listings</title>
+    <link rel="icon" href="images/favicon.svg" type="image/svg+xml">
+    <link rel="stylesheet" href="style.css">
+</head>
+<body data-page="farmer">
+    <header class="navbar" id="site-header"></header>
+
+    <main class="main-container">
+        <div class="row-between">
+            <h1 class="page-title">My listings</h1>
+            <button type="button" class="btn-primary" id="addBtn" hidden>Add produce</button>
+        </div>
+        <div id="statusNote"></div>
+
+        <!-- Add / edit form -->
+        <div class="form-card wide" id="formCard" hidden>
+            <h2 class="sub first" id="formTitle">Add produce</h2>
+            <form id="produceForm" novalidate>
+                <div class="field">
+                    <label for="name">Produce name</label>
+                    <input type="text" id="name" name="name" required minlength="2" maxlength="80">
+                </div>
+                <div class="field">
+                    <label for="category_id">Category</label>
+                    <select id="category_id" name="category_id" required><option value="">Choose a category</option></select>
+                </div>
+                <div class="field two">
+                    <div>
+                        <label for="price_kes">Price (KES)</label>
+                        <input type="number" id="price_kes" name="price_kes" min="1" max="1000000" step="1" inputmode="numeric" required>
+                    </div>
+                    <div>
+                        <label for="unit">Per</label>
+                        <select id="unit" name="unit" required>
+                            <option>kg</option><option>bunch</option><option>crate</option><option>sack</option>
+                            <option>piece</option><option>litre</option><option>tray</option>
+                        </select>
+                    </div>
+                </div>
+                <div class="field">
+                    <label for="quantity">Quantity available</label>
+                    <input type="number" id="quantity" name="quantity" min="0" max="1000000" step="1" inputmode="numeric" required>
+                </div>
+                <div class="field">
+                    <label for="location">Collected from (town or county)</label>
+                    <input type="text" id="location" name="location" required minlength="2" maxlength="80">
+                </div>
+                <div class="field">
+                    <label for="description">Description</label>
+                    <textarea id="description" name="description" rows="3" maxlength="1000"></textarea>
+                </div>
+                <div class="field">
+                    <label for="photo">Photo (JPG, PNG or WebP, up to 2 MB)</label>
+                    <input type="file" id="photo" name="photo" accept="image/jpeg,image/png,image/webp">
+                    <p class="hint" id="photoHint" hidden>A photo is already saved. Choose a new one to replace it.</p>
+                </div>
+                <div class="row-actions">
+                    <button type="submit" class="btn-primary" id="saveBtn">Submit listing</button>
+                    <button type="button" class="btn-outline" id="cancelBtn">Cancel</button>
+                </div>
+            </form>
+        </div>
+
+        <h2 class="sub">Your produce</h2>
+        <div id="listings"><p class="muted">Loading…</p></div>
+
+        <h2 class="sub">Orders for your produce</h2>
+        <div id="orders"><p class="muted">Loading…</p></div>
+    </main>
+
+    <footer class="footer" id="site-footer"></footer>
+    <script src="script.js"></script>
+    <script>
+        const form = document.getElementById('produceForm');
+        const formCard = document.getElementById('formCard');
+        let me = null;
+        let items = [];
+        let editingId = null;
+
+        function openForm(p) {
+            editingId = p ? p.id : null;
+            clearFormErrors(form);
+            form.reset();
+            document.getElementById('formTitle').textContent = p ? 'Edit produce' : 'Add produce';
+            document.getElementById('saveBtn').textContent = p ? 'Save changes' : 'Submit listing';
+            document.getElementById('photoHint').hidden = !(p && p.photo);
+            if (p) {
+                form.elements.name.value = p.name;
+                form.category_id.value = p.category_id;
+                form.price_kes.value = p.price_kes;
+                form.unit.value = p.unit;
+                form.quantity.value = p.quantity;
+                form.location.value = p.location;
+                form.description.value = p.description || '';
+            } else {
+                form.location.value = me.location || '';
+            }
+            formCard.hidden = false;
+            formCard.scrollIntoView({ behavior: 'smooth', block: 'start' });
+            form.elements.name.focus();
+        }
+
+        function closeForm() {
+            formCard.hidden = true;
+            editingId = null;
+        }
+
+        async function loadListings() {
+            const box = document.getElementById('listings');
+            try {
+                ({ items } = await api('/farmer/produce'));
+            } catch (err) {
+                box.innerHTML = `<div class="alert alert-error">${esc(err.message)}</div>`;
+                return;
+            }
+            if (!items.length) {
+                box.innerHTML = '<div class="empty"><p>You have no listings yet. Add your first produce so buyers can find it.</p></div>';
+                return;
+            }
+            box.innerHTML = `<div class="table-wrap"><table>
+                <thead><tr><th>Produce</th><th>Category</th><th class="num">Price</th><th class="num">Stock</th><th>Status</th><th>Actions</th></tr></thead>
+                <tbody>${items.map((p) => `<tr>
+                    <td><a href="product-details.html?id=${p.id}">${esc(p.name)}</a></td>
+                    <td>${esc(p.category)}</td>
+                    <td class="num">${kes(p.price_kes)}/${esc(p.unit)}</td>
+                    <td class="num">${p.quantity} ${esc(p.unit)}</td>
+                    <td>${badge(p.status)}</td>
+                    <td><div class="row-actions">
+                        <button type="button" class="linklike" data-edit="${p.id}">Edit</button>
+                        <button type="button" class="linklike danger" data-del="${p.id}">Remove</button>
+                    </div></td></tr>`).join('')}</tbody></table></div>`;
+        }
+
+        async function loadOrders() {
+            const box = document.getElementById('orders');
+            try {
+                const { items: rows } = await api('/farmer/orders');
+                if (!rows.length) { box.innerHTML = '<p class="muted">No orders yet.</p>'; return; }
+                box.innerHTML = `<div class="table-wrap"><table>
+                    <thead><tr><th>Order</th><th>Item</th><th class="num">Qty</th><th>Buyer</th><th>Deliver to</th><th>Status</th></tr></thead>
+                    <tbody>${rows.map((o) => `<tr>
+                        <td>${orderNo(o.order_id)}<br><span class="meta">${esc(dateOnly(o.created_at))}</span></td>
+                        <td>${esc(o.produce_name)}</td><td class="num">${o.quantity} ${esc(o.unit)}</td>
+                        <td>${esc(o.buyer_name)}<br><span class="meta">${esc(o.buyer_phone)}</span></td>
+                        <td>${esc(o.delivery_address)}</td><td>${badge(o.status)}</td></tr>`).join('')}</tbody></table></div>`;
+            } catch (err) {
+                box.innerHTML = `<div class="alert alert-error">${esc(err.message)}</div>`;
+            }
+        }
+
+        document.getElementById('listings').addEventListener('click', async (e) => {
+            const edit = e.target.closest('[data-edit]');
+            const del = e.target.closest('[data-del]');
+            if (edit) {
+                openForm(items.find((p) => p.id === parseInt(edit.dataset.edit, 10)));
+            } else if (del) {
+                const p = items.find((x) => x.id === parseInt(del.dataset.del, 10));
+                if (!confirm(`Remove "${p.name}"? This cannot be undone.`)) return;
+                try {
+                    const res = await api('/farmer/produce/' + p.id, { method: 'DELETE' });
+                    toast(res.message);
+                    loadListings();
+                } catch (err) {
+                    toast(err.message, 'error');
+                }
+            }
+        });
+
+        document.getElementById('addBtn').addEventListener('click', () => openForm(null));
+        document.getElementById('cancelBtn').addEventListener('click', closeForm);
+
+        form.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const d = Object.fromEntries(new FormData(form));
+            const p = {};
+            if (d.name.trim().length < 2) p.name = 'Enter the produce name (at least 2 characters).';
+            if (!d.category_id) p.category_id = 'Choose a category.';
+            if (!/^\d+$/.test(d.price_kes) || Number(d.price_kes) < 1) p.price_kes = 'Enter a whole-number price above 0.';
+            if (!/^\d+$/.test(d.quantity)) p.quantity = 'Enter a whole-number quantity (0 or more).';
+            if (d.location.trim().length < 2) p.location = 'Enter where the produce is collected from.';
+            const file = form.photo.files[0];
+            if (file && !/^image\/(jpeg|png|webp)$/.test(file.type)) p.photo = 'Photo must be a JPG, PNG or WebP image.';
+            if (file && file.size > 2 * 1024 * 1024) p.photo = 'Photo must be under 2 MB.';
+            if (Object.keys(p).length) { showFormErrors(form, 'Please fix the highlighted fields.', p); return; }
+
+            const btn = document.getElementById('saveBtn');
+            btn.disabled = true;
+            try {
+                const body = new FormData(form);
+                if (!file) body.delete('photo');
+                const res = await api(editingId ? '/farmer/produce/' + editingId : '/farmer/produce', { method: editingId ? 'PUT' : 'POST', body });
+                toast(res.message);
+                closeForm();
+                loadListings();
+            } catch (err) {
+                showFormErrors(form, err.message, err.details);
+            } finally {
+                btn.disabled = false;
+            }
+        });
+
+        (async () => {
+            me = await requireRole('farmer');
+            if (!me) return;
+
+            const note = document.getElementById('statusNote');
+            if (me.is_approved === 0) note.innerHTML = '<div class="alert alert-warn">Your account is waiting for administrator approval. You can add produce once it is approved.</div>';
+            else if (me.is_approved === 2) note.innerHTML = '<div class="alert alert-error">Your farmer account was not approved. Use the Contact page to ask why.</div>';
+            else document.getElementById('addBtn').hidden = false;
+
+            try {
+                const { categories } = await api('/categories');
+                categories.forEach((c) => {
+                    const o = document.createElement('option');
+                    o.value = c.id;
+                    o.textContent = c.name;
+                    form.category_id.appendChild(o);
+                });
+            } catch (e) { /* the form will show a validation message if this fails */ }
+
+            loadListings();
+            loadOrders();
+        })();
+    </script>
+</body>
+</html>

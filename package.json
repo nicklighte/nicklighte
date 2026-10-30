@@ -1,0 +1,23 @@
+{
+  "name": "green-agribusiness",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Green Agribusiness: farmers list produce, buyers order online",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "seed": "node seed.js",
+    "setup-db": "node setup-db.js"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "dependencies": {
+    "bcryptjs": "^2.4.3",
+    "express": "^5.3.0",
+    "express-rate-limit": "^7.5.0",
+    "express-session": "^1.18.1",
+    "multer": "^2.0.0",
+    "mysql2": "^3.24.5"
+  }
+}

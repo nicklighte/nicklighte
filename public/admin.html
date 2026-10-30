@@ -1,0 +1,172 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Admin Dashboard - Green Agribusiness</title>
+    <link rel="icon" href="images/favicon.svg" type="image/svg+xml">
+    <link rel="stylesheet" href="style.css">
+</head>
+<body data-page="admin">
+    <header class="navbar" id="site-header"></header>
+
+    <main class="main-container">
+        <h1 class="page-title">Admin dashboard</h1>
+
+        <div class="stats" id="stats"></div>
+
+        <div class="tabs" role="tablist" aria-label="Admin sections">
+            <button type="button" role="tab" data-tab="farmers" aria-selected="true">Farmer approvals <span id="countFarmers"></span></button>
+            <button type="button" role="tab" data-tab="listings" aria-selected="false">Listing approvals <span id="countListings"></span></button>
+            <button type="button" role="tab" data-tab="orders" aria-selected="false">Orders</button>
+        </div>
+
+        <section id="tab-farmers" role="tabpanel">
+            <p class="lead">Review newly registered farmers awaiting system activation.</p>
+            <div id="farmersBox"><p class="muted">Loading pending farmers…</p></div>
+        </section>
+
+        <section id="tab-listings" role="tabpanel" hidden>
+            <p class="lead">Approve produce before buyers can see it.</p>
+            <div id="listingsBox"></div>
+        </section>
+
+        <section id="tab-orders" role="tabpanel" hidden>
+            <div class="chips" id="chips" role="group" aria-label="Filter orders by status">
+                <button type="button" class="chip" data-status="" aria-pressed="true">All</button>
+                <button type="button" class="chip" data-status="placed" aria-pressed="false">Placed</button>
+                <button type="button" class="chip" data-status="confirmed" aria-pressed="false">Confirmed</button>
+                <button type="button" class="chip" data-status="dispatched" aria-pressed="false">Dispatched</button>
+                <button type="button" class="chip" data-status="delivered" aria-pressed="false">Delivered</button>
+            </div>
+            <div id="ordersBox"></div>
+        </section>
+    </main>
+
+    <footer class="footer" id="site-footer"></footer>
+    <script src="script.js"></script>
+    <script>
+        const FLOW = ['placed', 'confirmed', 'dispatched', 'delivered'];
+        let orderFilter = '';
+
+        async function loadStats() {
+            try {
+                const s = await api('/admin/stats');
+                const box = (label, value) => `<div class="stat"><div class="label">${label}</div><div class="value">${esc(value)}</div></div>`;
+                document.getElementById('stats').innerHTML =
+                    box('Approved farmers', s.farmers) + box('Buyers', s.buyers) + box('Live listings', s.listings) +
+                    box('Orders', s.orders) + box('Order value', kes(s.order_value));
+            } catch (e) { /* stats are optional */ }
+        }
+
+        async function loadFarmers() {
+            const box = document.getElementById('farmersBox');
+            try {
+                const farmers = await api('/admin/pending-farmers');
+                document.getElementById('countFarmers').textContent = farmers.length ? `(${farmers.length})` : '';
+                if (!farmers.length) { box.innerHTML = '<p class="muted">No pending farmers found. All caught up!</p>'; return; }
+                box.innerHTML = `<div class="table-wrap"><table>
+                    <thead><tr><th>ID</th><th>Full Name</th><th>Email</th><th>Phone</th><th>Location</th><th>Action</th></tr></thead>
+                    <tbody>${farmers.map((f) => `<tr>
+                        <td>${f.id}</td><td>${esc(f.full_name)}</td><td>${esc(f.email)}</td><td>${esc(f.phone)}</td><td>${esc(f.location || 'N/A')}</td>
+                        <td><div class="row-actions">
+                            <button type="button" class="btn-primary btn-small" data-farmer="${f.id}" data-do="approve">Approve</button>
+                            <button type="button" class="linklike danger" data-farmer="${f.id}" data-do="reject">Reject</button>
+                        </div></td></tr>`).join('')}</tbody></table></div>`;
+            } catch (err) {
+                box.innerHTML = `<div class="alert alert-error">${esc(err.message)}</div>`;
+            }
+        }
+
+        async function loadListings() {
+            const box = document.getElementById('listingsBox');
+            try {
+                const { items } = await api('/admin/pending-produce');
+                document.getElementById('countListings').textContent = items.length ? `(${items.length})` : '';
+                if (!items.length) { box.innerHTML = '<p class="muted">No listings are waiting.</p>'; return; }
+                box.innerHTML = `<div class="table-wrap"><table>
+                    <thead><tr><th>Produce</th><th>Farmer</th><th class="num">Price</th><th class="num">Stock</th><th>Decision</th></tr></thead>
+                    <tbody>${items.map((p) => `<tr>
+                        <td><a href="product-details.html?id=${p.id}">${esc(p.name)}</a><br><span class="meta">${esc(p.category)} · ${esc(p.location)}</span></td>
+                        <td>${esc(p.farmer_name)}</td><td class="num">${kes(p.price_kes)}/${esc(p.unit)}</td><td class="num">${p.quantity} ${esc(p.unit)}</td>
+                        <td><div class="row-actions">
+                            <button type="button" class="btn-primary btn-small" data-produce="${p.id}" data-do="approve">Approve</button>
+                            <button type="button" class="linklike danger" data-produce="${p.id}" data-do="reject">Reject</button>
+                        </div></td></tr>`).join('')}</tbody></table></div>`;
+            } catch (err) {
+                box.innerHTML = `<div class="alert alert-error">${esc(err.message)}</div>`;
+            }
+        }
+
+        async function loadOrders() {
+            const box = document.getElementById('ordersBox');
+            try {
+                const { orders } = await api('/admin/orders' + (orderFilter ? '?status=' + orderFilter : ''));
+                if (!orders.length) { box.innerHTML = '<p class="muted">No orders found.</p>'; return; }
+                box.innerHTML = `<div class="table-wrap"><table>
+                    <thead><tr><th>Order</th><th>Buyer</th><th>Date</th><th class="num">Total</th><th>Status</th><th>Next step</th></tr></thead>
+                    <tbody>${orders.map((o) => {
+                        const next = FLOW[FLOW.indexOf(o.status) + 1];
+                        return `<tr>
+                            <td><a href="order.html?id=${o.id}">${orderNo(o.id)}</a></td><td>${esc(o.buyer_name)}</td><td>${esc(dateOnly(o.created_at))}</td>
+                            <td class="num">${kes(o.total_kes)}</td><td>${badge(o.status)}</td>
+                            <td>${next ? `<button type="button" class="btn-primary btn-small" data-order="${o.id}">Mark ${esc(next)}</button>` : '<span class="muted">Complete</span>'}</td></tr>`;
+                    }).join('')}</tbody></table></div>`;
+            } catch (err) {
+                box.innerHTML = `<div class="alert alert-error">${esc(err.message)}</div>`;
+            }
+        }
+
+        // One click handler for every action button on the page
+        document.querySelector('main').addEventListener('click', async (e) => {
+            const farmer = e.target.closest('[data-farmer]');
+            const produce = e.target.closest('[data-produce]');
+            const order = e.target.closest('[data-order]');
+            try {
+                if (farmer) {
+                    const act = farmer.dataset.do;
+                    if (!confirm(`Are you sure you want to ${act} this farmer?`)) return;
+                    const res = await api(`/admin/${act}-farmer/${farmer.dataset.farmer}`, { method: 'PUT' });
+                    toast(res.message);
+                    loadFarmers(); loadStats();
+                } else if (produce) {
+                    const act = produce.dataset.do;
+                    const res = await api(`/admin/produce/${produce.dataset.produce}/${act}`, { method: 'PUT' });
+                    toast(res.message);
+                    loadListings(); loadStats();
+                } else if (order) {
+                    await api(`/admin/orders/${order.dataset.order}/advance`, { method: 'PUT' });
+                    toast('Order updated.');
+                    loadOrders();
+                }
+            } catch (err) {
+                toast(err.message, 'error');
+                if (order) loadOrders();
+            }
+        });
+
+        // Tabs
+        document.querySelectorAll('.tabs [data-tab]').forEach((tab) => tab.addEventListener('click', () => {
+            document.querySelectorAll('.tabs [data-tab]').forEach((t) => t.setAttribute('aria-selected', String(t === tab)));
+            ['farmers', 'listings', 'orders'].forEach((name) => { document.getElementById('tab-' + name).hidden = name !== tab.dataset.tab; });
+            if (tab.dataset.tab === 'orders') loadOrders();
+        }));
+
+        // Order status filter
+        document.getElementById('chips').addEventListener('click', (e) => {
+            const chip = e.target.closest('[data-status]');
+            if (!chip) return;
+            orderFilter = chip.dataset.status;
+            document.querySelectorAll('#chips .chip').forEach((c) => c.setAttribute('aria-pressed', String(c === chip)));
+            loadOrders();
+        });
+
+        (async () => {
+            if (!(await requireRole('admin'))) return;
+            loadStats();
+            loadFarmers();
+            loadListings();
+        })();
+    </script>
+</body>
+</html>

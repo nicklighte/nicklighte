@@ -1,0 +1,191 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Green Agribusiness - Produce Catalogue</title>
+    <link rel="icon" href="images/favicon.svg" type="image/svg+xml">
+    <link rel="stylesheet" href="style.css">
+</head>
+<body data-page="catalogue">
+    <header class="navbar" id="site-header"></header>
+
+    <main class="main-container">
+        <h1 class="page-title">Produce catalogue</h1>
+        <div class="catalogue-layout">
+
+            <!-- Filters -->
+            <form class="filters" id="filters" aria-label="Filter produce">
+                <h2>Filters</h2>
+                <div class="field">
+                    <label for="search">Search</label>
+                    <input type="search" id="search" name="search" placeholder="e.g. tomatoes" maxlength="60">
+                </div>
+                <div class="field">
+                    <label for="category">Category</label>
+                    <select id="category" name="category"><option value="">All categories</option></select>
+                </div>
+                <div class="field">
+                    <label for="location">Location</label>
+                    <select id="location" name="location"><option value="">Anywhere</option></select>
+                </div>
+                <div class="field two">
+                    <div><label for="min_price">Min price</label><input type="number" id="min_price" name="min_price" min="0" step="1" inputmode="numeric"></div>
+                    <div><label for="max_price">Max price</label><input type="number" id="max_price" name="max_price" min="0" step="1" inputmode="numeric"></div>
+                </div>
+                <div class="field">
+                    <label for="sort">Sort by</label>
+                    <select id="sort" name="sort">
+                        <option value="newest">Newest</option>
+                        <option value="price_asc">Price: low to high</option>
+                        <option value="price_desc">Price: high to low</option>
+                        <option value="name">Name A–Z</option>
+                    </select>
+                </div>
+                <label class="check"><input type="checkbox" id="in_stock" name="in_stock" value="1"> In stock only</label>
+                <div class="actions">
+                    <button type="submit" class="btn-primary">Apply filters</button>
+                    <button type="button" class="btn-outline" id="resetBtn">Clear</button>
+                </div>
+            </form>
+
+            <!-- Results -->
+            <div class="results">
+                <div id="farmerNote" class="alert alert-ok" hidden></div>
+                <p class="result-count" id="resultCount" aria-live="polite"></p>
+                <div class="grid grid-3" id="grid" aria-busy="true"><p class="muted">Loading produce…</p></div>
+                <nav class="pager" id="pager" aria-label="Pages"></nav>
+            </div>
+        </div>
+    </main>
+
+    <footer class="footer" id="site-footer"></footer>
+    <script src="script.js"></script>
+    <script>
+        const form = document.getElementById('filters');
+        const grid = document.getElementById('grid');
+        const params = new URLSearchParams(location.search);
+        let farmerId = /^\d+$/.test(params.get('farmer') || '') ? params.get('farmer') : '';
+        let page = parseInt(params.get('page'), 10) || 1;
+        let currentUser = null;
+
+        function fillSelect(select, values) {
+            values.forEach((v) => {
+                const o = document.createElement('option');
+                o.value = v;
+                o.textContent = v;          // textContent, never innerHTML, for text from the database
+                select.appendChild(o);
+            });
+        }
+
+        function readFilters() {
+            const q = new URLSearchParams();
+            new FormData(form).forEach((value, key) => { if (String(value).trim() !== '') q.set(key, String(value).trim()); });
+            if (farmerId) q.set('farmer', farmerId);
+            q.set('page', page);
+            q.set('per_page', 9);
+            return q;
+        }
+
+        async function load() {
+            const q = readFilters();
+            grid.setAttribute('aria-busy', 'true');
+            history.replaceState(null, '', '?' + q.toString());      // keeps filters when you refresh or share the link
+            try {
+                const data = await api('/produce?' + q.toString());
+                render(data);
+            } catch (err) {
+                grid.innerHTML = `<div class="alert alert-error span-all">${esc(err.message)}</div>`;
+            }
+            grid.setAttribute('aria-busy', 'false');
+        }
+
+        function render(data) {
+            document.getElementById('resultCount').textContent =
+                data.total === 0 ? 'No produce found.' : `${data.total} item${data.total === 1 ? '' : 's'} found`;
+
+            const note = document.getElementById('farmerNote');
+            if (farmerId && data.items.length) {
+                note.innerHTML = `Showing produce from <strong>${esc(data.items[0].farmer_name)}</strong>. <a href="#" id="allFarmers">Show all farmers</a>`;
+                note.hidden = false;
+            } else {
+                note.hidden = true;
+            }
+
+            const canBuy = !currentUser || currentUser.role === 'buyer';
+            grid.innerHTML = data.items.map((p) => `
+                <article class="card">
+                    ${photoHtml(p)}
+                    <h3><a href="product-details.html?id=${p.id}">${esc(p.name)}</a></h3>
+                    <p class="price">${kes(p.price_kes)} per ${esc(p.unit)}</p>
+                    <p class="meta">${esc(p.farmer_name)} · ${esc(p.location)}</p>
+                    <p class="stock${p.quantity === 0 ? ' out' : ''}">${p.quantity === 0 ? 'Sold out' : p.quantity + ' ' + esc(p.unit) + ' left'}</p>
+                    <div class="actions">
+                        <a href="product-details.html?id=${p.id}" class="btn-outline">View</a>
+                        ${canBuy ? `<button type="button" class="btn-primary" data-add="${p.id}" data-name="${esc(p.name)}"${p.quantity === 0 ? ' disabled' : ''}>Add</button>` : ''}
+                    </div>
+                </article>`).join('');
+
+            // page buttons
+            const pager = document.getElementById('pager');
+            pager.innerHTML = '';
+            if (data.pages > 1) {
+                const btn = (label, target, current, disabled) => {
+                    const b = document.createElement('button');
+                    b.type = 'button';
+                    b.textContent = label;
+                    b.disabled = !!disabled;
+                    if (current) b.setAttribute('aria-current', 'page');
+                    b.addEventListener('click', () => { page = target; load(); window.scrollTo({ top: 0, behavior: 'smooth' }); });
+                    pager.appendChild(b);
+                };
+                btn('‹ Previous', data.page - 1, false, data.page === 1);
+                for (let i = 1; i <= data.pages; i++) btn(String(i), i, i === data.page);
+                btn('Next ›', data.page + 1, false, data.page === data.pages);
+            }
+        }
+
+        // "Add" buttons (one listener for the whole grid)
+        grid.addEventListener('click', (e) => {
+            const btn = e.target.closest('[data-add]');
+            if (!btn) return;
+            Cart.add(parseInt(btn.dataset.add, 10), 1);
+            toast(btn.dataset.name + ' added to your cart.');
+        });
+
+        document.getElementById('farmerNote').addEventListener('click', (e) => {
+            if (e.target.id === 'allFarmers') { e.preventDefault(); farmerId = ''; page = 1; load(); }
+        });
+
+        form.addEventListener('submit', (e) => {
+            e.preventDefault();
+            const min = form.min_price.value, max = form.max_price.value;
+            if (min !== '' && max !== '' && Number(min) > Number(max)) { toast('Minimum price is higher than the maximum.', 'error'); return; }
+            page = 1;
+            load();
+        });
+
+        document.getElementById('resetBtn').addEventListener('click', () => {
+            form.reset();
+            farmerId = '';
+            page = 1;
+            load();
+        });
+
+        // Start: load the dropdown options, copy any ?search= / ?category= from the address, then show products
+        (async () => {
+            currentUser = await getMe();
+            try {
+                const [cats, locs] = await Promise.all([api('/categories'), api('/locations')]);
+                fillSelect(form.category, cats.categories.map((c) => c.name));
+                fillSelect(form.location, locs.locations);
+            } catch (e) { /* the product request below will show the error */ }
+            ['search', 'category', 'location', 'min_price', 'max_price', 'sort'].forEach((k) => {
+                if (params.get(k) !== null && form[k]) form[k].value = params.get(k);
+            });
+            if (params.get('in_stock') === '1') form.in_stock.checked = true;
+            load();
+        })();
+    </script>
+</body>
+</html>

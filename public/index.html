@@ -1,0 +1,72 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Green Agribusiness - Home</title>
+    <meta name="description" content="Buy fresh produce straight from the farmer who grew it.">
+    <link rel="icon" href="images/favicon.svg" type="image/svg+xml">
+    <link rel="stylesheet" href="style.css">
+</head>
+<body data-page="home">
+    <header class="navbar" id="site-header"></header>
+
+    <section class="hero-section">
+        <div class="hero-copy">
+            <h1>Buy fresh produce straight from the farmer who grew it</h1>
+            <p>Farmers set the price. Households, hotels, schools and exporters order online.</p>
+            <form class="hero-search" id="heroSearch" role="search">
+                <label for="searchInput" class="sr-only">Search produce</label>
+                <input type="search" id="searchInput" placeholder="Search produce…" maxlength="60">
+                <button type="submit" id="searchBtn" class="btn-primary">Search</button>
+            </form>
+        </div>
+        <!-- To use a real photo instead, save it as images/hero.jpg and change the src below to "images/hero.jpg" -->
+        <img class="hero-image" src="hero.jpg" alt="logo" width="350" height="210">
+    </section>
+
+    <main class="main-container">
+        <section>
+            <h2>Shop by category</h2>
+            <div class="grid grid-3" id="categoryGrid">
+                <p class="muted">Loading categories…</p>
+            </div>
+        </section>
+
+        <section>
+            <h2>How it works</h2>
+            <div class="grid grid-3">
+                <div class="step"><strong>1. Farmers list produce</strong><p>Register, get approved, list produce</p></div>
+                <div class="step"><strong>2. Buyers order online</strong><p>Search, add to cart, place an order</p></div>
+                <div class="step"><strong>3. Produce is delivered</strong><p>Track the order and download a receipt</p></div>
+            </div>
+        </section>
+    </main>
+
+    <footer class="footer" id="site-footer"></footer>
+
+    <script src="script.js"></script>
+    <script>
+        // Search box: go to the catalogue with the typed words
+        document.getElementById('heroSearch').addEventListener('submit', (e) => {
+            e.preventDefault();
+            const q = document.getElementById('searchInput').value.trim();
+            if (!q) { toast('Please enter a search term.', 'error'); return; }
+            location.href = 'catalogue.html?search=' + encodeURIComponent(q);
+        });
+
+        // Category tiles come from the database, and each one is a real link to the filtered catalogue
+        (async () => {
+            const grid = document.getElementById('categoryGrid');
+            try {
+                const { categories } = await api('/categories');
+                grid.innerHTML = categories.map((c) =>
+                    `<a class="tile" href="catalogue.html?category=${encodeURIComponent(c.name)}">${esc(c.name)}</a>`).join('')
+                    || '<p class="muted">No categories yet.</p>';
+            } catch (e) {
+                grid.innerHTML = `<div class="alert alert-error">${esc(e.message)}</div>`;
+            }
+        })();
+    </script>
+</body>
+</html>
